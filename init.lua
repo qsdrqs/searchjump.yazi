@@ -3,8 +3,8 @@ local CH_TABLE={["厑"] = "s", ["吖"] = "y", ["阿"] = "e", ["呵"] = "k", ["�
 
 local KEYS_LABLE = {
 	"j", "f", "d", "k", "l", "h", "g", "a", "s", "o", "i", "e", "u", "n", "c", "m", "r","p", "b", "t", "w", "v", "x", "y", "q", "z",
-	"I", "J","L","H", "A", "B", "Y", "D", "E", "F", "G",  "Q","R", "T", 
-	"U", "V", "W", "X", "Z", "C","K",  "M", "N", "O", "P","S", 
+	"I", "J","L","H", "A", "B", "Y", "D", "E", "F", "G",  "Q","R", "T",
+	"U", "V", "W", "X", "Z", "C","K",  "M", "N", "O", "P","S",
 }
 
 local INPUT_KEY = {
@@ -53,7 +53,7 @@ local function get_match_position(name, find_str)
 		else
 			convert_name = convert_name .. ch
 		end
-	end	
+	end
 
 	-- record all match start position and end position
 	-- startPos[index],endPos[index],sanme index corresponde a search result
@@ -72,7 +72,7 @@ local function get_match_position(name, find_str)
 	-- find match chinese str
 	for ch in string.gmatch(find_str, ".") do
 		convert_find_str = convert_find_str .. string.upper(ch) .. "##"
-	end	
+	end
 
 	endp = 0
 	startp = 0
@@ -82,7 +82,7 @@ local function get_match_position(name, find_str)
 		if not startp then
 			break
 		end
-		
+
 		for pindex, pos in ipairs(startPos) do
 			if pos > startp then
 				zh_insert_index = pindex
@@ -98,7 +98,7 @@ local function get_match_position(name, find_str)
 			table.insert(endPos,zh_insert_index,endp)
 		end
 
-	end		
+	end
 
 	if #startPos > 0 then
 		return startPos, endPos,convert_name
@@ -201,18 +201,18 @@ local record_match_file = ya.sync(function(state, patterns)
 			else
 				covert_parttern = covert_parttern .. string.lower(ch)
 			end
-		end	
+		end
 
 		-- record match file from current window
-		update_match_table("current",Folder:by_kind(Folder.CURRENT), covert_parttern)
+		update_match_table("current",cx.active.current, covert_parttern)
 
 		if not state.opt_only_current then
 			-- record match file from parent window
-			update_match_table("parent", Folder:by_kind(Folder.PARENT), covert_parttern)
+			update_match_table("parent", cx.active.parent, covert_parttern)
 			-- record match file from preview window
-			update_match_table("preview", Folder:by_kind(Folder.PREVIEW), covert_parttern)
+			update_match_table("preview", cx.active.preview.folder, covert_parttern)
 		end
-	end	
+	end
 
 	-- get valid key list (KEYS_LABLE but exclude state.next_char table)
 	local valid_lable = {}
@@ -244,7 +244,7 @@ local record_match_file = ya.sync(function(state, patterns)
 	end
 
 	-- flush page
-	if Folder:by_kind(Folder.PREVIEW) then
+	if cx.active.preview.folder then
 		ya.manager_emit("peek", { force = true })
 	end
 	ya.render()
@@ -254,47 +254,48 @@ end)
 
 local toggle_ui = ya.sync(function(st)
 	if st.highlights or st.mode then
-		File.highlights, Status.mode, st.highlights, st.mode = st.highlights, st.mode, nil, nil
-		if Folder:by_kind(Folder.PREVIEW) then
+		Entity.highlights, Status.mode, st.highlights, st.mode = st.highlights, st.mode, nil, nil
+		if cx.active.preview.folder then
 			ya.manager_emit("peek", { force = true })
 		end
 		ya.render()
 		return
 	end
 
-	st.highlights, st.mode = File.highlights, Status.mode
+	st.highlights, st.mode = Entity.highlights, Status.mode
 
-	File.highlights = function(self, file)
-		local span = {}
+	Entity.highlights = function(self)
+		local file = self._file
+		local spans = {}
 		local name = file.name:gsub("\r", "?", 1)
 
 		local url = tostring(file.url)
 
 		if st.match and st.match[url] then
-			span = set_match_lable(url, name, file)
+			spans = set_match_lable(url, name, file)
 		elseif file:is_hovered() then
-			span = ui.Span(name)
+			spans = { ui.Span(name) }
 		else
-			span = ui.Span(name):fg(st.opt_unmatch_fg)
+			spans = { ui.Span(name):fg(st.opt_unmatch_fg) }
 		end
 
-		return span
+		return ui.Line(spans)
 	end
 
 	Status.mode = function(self)
-		local style = self.style()
+		local style = self:style()
 		return ui.Line {
 			ui.Span(THEME.status.separator_open):fg(style.bg),
 			ui.Span(" SJ-" .. tostring(cx.active.mode):upper() .. " "):style(style),
 		}
 	end
 
-	if Folder:by_kind(Folder.PREVIEW) then
+	if cx.active.preview.folder then
 		ya.manager_emit("peek", { force = true })
 	end
 end)
 
-local check_key_is_lable = ya.sync(function(state,final_input_str) 
+local check_key_is_lable = ya.sync(function(state,final_input_str)
 	if not state.match then
 		return nil
 	end
@@ -315,7 +316,7 @@ local set_target_str = ya.sync(function(state, patterns, final_input_str)
 	local url = check_key_is_lable(final_input_str)
 	if url then -- if the last str match is a lable key, not a searchchar,toggle jump action
 		if not state.args_autocd and  state.match[url].pane == "current"then-- if target file in current pane, use `arrow` instead of`reveal` tosupport select mode
-			local folder = Folder:by_kind(Folder.CURRENT)
+			local folder = cx.active.current
 			ya.manager_emit("arrow",{ state.match[url].cursorPos - folder.cursor - 1 + folder.offset})
 		elseif state.args_autocd and state.match[url].isdir then
 			ya.manager_emit("cd",{ url })
